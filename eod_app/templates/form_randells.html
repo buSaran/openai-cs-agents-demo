@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Randell's End of Day Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: auto; }
+    fieldset { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 8px; background: #fafafa; }
+    legend { font-weight: bold; }
+    .row { display:flex; gap:20px; margin-top:10px; flex-wrap:wrap; }
+    label { flex:1; }
+    .variance-box { border:1px dashed #aaa; margin-top:20px; padding:12px; background:#fff; }
+    .tick { font-weight:bold; margin-left: 10px; }
+    .ok { color: green; }
+    .warn { color: red; }
+    button { padding: 10px 20px; margin-top: 10px; }
+    .cash-block { background:#fff7cc; border-color:#f5c542; }
+    .lottery-block { background:#ffe0e0; border-color:#e74c3c; }
+    .paypoint-block { background:#fff6c1; border-color:#f1c40f; }
+    .payzone-block { background:#ffd6d6; border-color:#e74c3c; }
+  </style>
+</head>
+<body>
+  <h2>Randell's End of Day Report</h2>
+
+  <p>
+    <a href="/randells"><button type="button">Fetch Latest Z-Report</button></a>
+    <span class="tick {% if '✅' in message %}ok{% else %}warn{% endif %}">{{ message }}</span>
+  </p>
+
+  <form method="post" action="/randells" id="eodForm">
+    <fieldset class="cash-block">
+      <legend>Cash</legend>
+      <div class="row">
+        <label>Staff PIN: <input type="password" name="pin" required></label>
+        <label>Payouts: <input type="number" step="0.01" name="payouts" required></label>
+        <label>Counted Cash: <input type="number" step="0.01" name="counted_cash" required></label>
+      </div>
+    </fieldset>
+
+    <fieldset class="lottery-block">
+      <legend>Lottery</legend>
+      <div class="row">
+        <label>Lottery Report: <input type="number" step="0.01" name="lottery_report" required></label>
+        <label>Lottery Machine Payout: <input type="number" step="0.01" name="lottery_machine" required></label>
+      </div>
+    </fieldset>
+
+    <fieldset class="paypoint-block">
+      <legend>PayPoint</legend>
+      <div class="row">
+        <label>Report: <input type="number" step="0.01" name="paypoint_report" required></label>
+        <label>Start Tx: <input type="text" name="pp_start_tx"></label>
+        <label>End Tx: <input type="text" name="pp_end_tx"></label>
+      </div>
+    </fieldset>
+
+    <fieldset class="payzone-block">
+      <legend>PayZone</legend>
+      <div class="row">
+        <label>Report: <input type="number" step="0.01" name="payzone_report" required></label>
+        <label>Start Tx: <input type="text" name="pz_start_tx"></label>
+        <label>End Tx: <input type="text" name="pz_end_tx"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Staff Hours</legend>
+      {% for i in range(1,5) %}
+      <div class="row">
+        <label>Staff {{ i }} Name: <input type="text" name="staff{{ i }}_name"></label>
+        <label>Start: <input type="time" name="staff{{ i }}_start"></label>
+        <label>End: <input type="time" name="staff{{ i }}_end"></label>
+      </div>
+      {% endfor %}
+    </fieldset>
+
+    <fieldset>
+      <legend>Notes</legend>
+      <textarea name="notes" rows="3" cols="40"></textarea>
+    </fieldset>
+
+    <button type="submit">Submit</button>
+  </form>
+
+  <div class="variance-box">
+    <p>Cash Variance: <span id="cashVar">0.00</span></p>
+    <p>Lottery Variance: <span id="lotVar">0.00</span></p>
+    <p>Lottery Payout Variance: <span id="lotPayVar">0.00</span></p>
+    <p>PayPoint Variance: <span id="ppVar">0.00</span></p>
+    <p>PayZone Variance: <span id="pzVar">0.00</span></p>
+  </div>
+
+  <script>
+    const form = document.getElementById("eodForm");
+    const inputs = Array.from(form.querySelectorAll("input, select, textarea"));
+    const numberInputs = Array.from(form.querySelectorAll("input[type='number']"));
+    const decimalPattern = /^-?\d*(?:\.\d{0,2})?$/;
+
+    const tillCash   = {{ pref.till_cash   | default(0) }};
+    const lotTill    = {{ pref.lottery_till | default(0) }};
+    const instPo     = {{ pref.inst_po     | default(0) }};
+    const lotPo      = {{ pref.lottery_po  | default(0) }};
+    const ppTill     = {{ pref.paypoint_till | default(0) }};
+    const pzTill     = {{ pref.payzone_till | default(0) }};
+
+    function updateVariance() {
+      const countedCash = parseFloat(document.querySelector("[name='counted_cash']").value) || 0;
+      const payouts = parseFloat(document.querySelector("[name='payouts']").value) || 0;
+      const lotReport = parseFloat(document.querySelector("[name='lottery_report']").value) || 0;
+      const lotMachine = parseFloat(document.querySelector("[name='lottery_machine']").value) || 0;
+      const ppReport = parseFloat(document.querySelector("[name='paypoint_report']").value) || 0;
+      const pzReport = parseFloat(document.querySelector("[name='payzone_report']").value) || 0;
+
+      const expectedCash = tillCash - payouts;
+      const cashVar = expectedCash - countedCash;
+      const lotVar = lotReport - lotTill;
+      const lotPayVar = lotMachine - (Math.abs(instPo) + Math.abs(lotPo));
+      const ppVar = ppReport - ppTill;
+      const pzVar = pzReport - pzTill;
+
+      function colour(el, val) {
+        el.textContent = val.toFixed(2);
+        el.style.color = val < 0 ? "red" : (val > 0 ? "green" : "black");
+      }
+      colour(document.getElementById("cashVar"), cashVar);
+      colour(document.getElementById("lotVar"), lotVar);
+      colour(document.getElementById("lotPayVar"), lotPayVar);
+      colour(document.getElementById("ppVar"), ppVar);
+      colour(document.getElementById("pzVar"), pzVar);
+    }
+
+    form.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && document.activeElement.tagName.toLowerCase() !== "textarea") {
+        e.preventDefault();
+        const idx = inputs.indexOf(document.activeElement);
+        if (e.shiftKey && idx > 0) {
+          inputs[idx - 1].focus();
+        } else if (idx > -1 && idx < inputs.length - 1) {
+          inputs[idx + 1].focus();
+        }
+      }
+    });
+
+    document.querySelectorAll("input").forEach(el => el.addEventListener("input", updateVariance));
+
+    numberInputs.forEach((input) => {
+      input.addEventListener("input", () => {
+        if (input.value && !decimalPattern.test(input.value)) {
+          input.setCustomValidity("Please enter numbers only (up to 2 decimals).");
+        } else {
+          input.setCustomValidity("");
+        }
+      });
+      input.addEventListener("blur", () => input.reportValidity());
+    });
+
+    form.addEventListener("submit", (event) => {
+      updateVariance();
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        event.preventDefault();
+        return;
+      }
+      if (!confirm("Submit this end of day report?")) {
+        event.preventDefault();
+      }
+    });
+    updateVariance();
+  </script>
+</body>
+</html>
